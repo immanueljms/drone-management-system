@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Integrated Drone Management System — PoC Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+<style>
+  :root {
+    --navy: #13202E;
+    --slate: #263A4D;
+    --steel: #4A6478;
+    --signal: #4FD1C5;
+    --amber: #F2A65A;
+    --offwhite: #F4F6F8;
+    --text-dark: #1B2A38;
+    --text-muted: #5C7080;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Calibri, sans-serif; background: var(--offwhite); color: var(--text-dark); }
+  #root { display: flex; flex-direction: column; height: 100vh; }
+
+  header {
+    background: var(--navy); color: white; padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 700; }
+  header .sub { font-size: 12px; color: #B9C6CF; margin-top: 2px; }
+  .conn-badge {
+    font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: 600;
+  }
+  .conn-on { background: rgba(79,209,197,0.15); color: var(--signal); }
+  .conn-off { background: rgba(242,166,90,0.15); color: var(--amber); }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+  #map { flex: 1; }
+
+  .sidebar {
+    width: 360px; background: white; border-left: 1px solid #E2E8EC;
+    overflow-y: auto; flex-shrink: 0;
+  }
+  .drone-card {
+    border-bottom: 1px solid #EDF1F4; padding: 14px 18px;
+  }
+  .drone-card .id-row {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
+  }
+  .drone-card .drone-id { font-weight: 700; font-size: 15px; }
+  .protocol-tag {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .tag-mavlink { background: #E6FAF7; color: #0F8A7C; }
+  .tag-aerolink { background: #FBEEE0; color: #B0680F; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 12.5px; margin-top: 8px; }
+  .stat-label { color: var(--text-muted); }
+  .stat-value { font-weight: 600; }
+
+  .battery-bar { height: 6px; border-radius: 3px; background: #EDF1F4; margin-top: 8px; overflow: hidden; }
+  .battery-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
+  .bat-ok { background: var(--signal); }
+  .bat-warn { background: var(--amber); }
+  .bat-critical { background: #E0594F; }
+
+  .alert-banner {
+    background: #FBEEE0; color: #8A4A0F; font-size: 11.5px; padding: 6px 10px;
+    border-radius: 6px; margin-top: 8px; font-weight: 600;
+  }
+
+  .cmd-row { display: flex; gap: 6px; margin-top: 10px; }
+  .cmd-btn {
+    flex: 1; font-size: 11.5px; font-weight: 600; padding: 6px 0; border-radius: 6px;
+    border: 1px solid #D8E0E5; background: var(--offwhite); cursor: pointer; color: var(--text-dark);
+  }
+  .cmd-btn:hover { background: #E2E8EC; }
+  .cmd-btn.rtl { color: #B0260F; border-color: #F0CFC9; }
+  .cmd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .empty-state { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+  .last-cmd-result { font-size: 11px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
+
+  .mode-badge {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.3px; margin-left: 6px;
+  }
+  .mode-circling { background: #E6FAF7; color: #0F8A7C; }
+  .mode-goto_waypoint { background: #EAF0FB; color: #2A56C6; }
+  .mode-returning_to_launch { background: #FBEEE0; color: #B0680F; }
+  .mode-unknown { background: #EDF1F4; color: var(--text-muted); }
+
+  /* drone marker icon (SVG, rotated via inline style per-instance) */
+  .drone-marker-wrap { display: flex; align-items: center; justify-content: center; }
+  .drone-marker-label {
+    position: absolute; top: 26px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; font-weight: 700; white-space: nowrap;
+    background: white; padding: 1px 5px; border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25); color: var(--text-dark);
+  }
+
+  .home-marker-label {
+    position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
+    font-size: 9.5px; font-weight: 700; white-space: nowrap;
+    background: var(--navy); color: white; padding: 1px 6px; border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+const { useState, useEffect, useRef, useCallback } = React;
+const h = React.createElement;
+
+const BACKEND_HTTP = "http://localhost:8000";
+const BACKEND_WS = "ws://localhost:8000/ws/telemetry";
+
+function batteryClass(status) {
+  if (status === "ok") return "bat-ok";
+  if (status === "warn") return "bat-warn";
+  if (status === "critical") return "bat-critical";
+  return "bat-warn";
+}
+
+function modeLabel(mode) {
+  if (!mode) return "UNKNOWN";
+  return mode.replace(/_/g, " ");
+}
+
+function DroneCard({ drone, onCommand, lastResult }) {
+  const isLowBattery = drone.battery_status === "critical" || drone.battery_status === "warn";
+  const modeClass = `mode-${(drone.flight_mode || "unknown").toLowerCase()}`;
+  const isReturning = drone.flight_mode === "RETURNING_TO_LAUNCH";
+
+  return h("div", { className: "drone-card" },
+    h("div", { className: "id-row" },
+      h("div", null,
+        h("span", { className: "drone-id" }, drone.drone_id),
+        h("span", { className: `mode-badge ${modeClass}` }, modeLabel(drone.flight_mode))
+      ),
+      h("span", { className: `protocol-tag ${drone.protocol === "mavlink" ? "tag-mavlink" : "tag-aerolink"}` }, drone.protocol)
+    ),
+    h("div", { className: "stat-grid" },
+      h("div", null, h("span", { className: "stat-label" }, "Lat / Lon: "), h("span", { className: "stat-value" }, `${drone.lat.toFixed(4)}, ${drone.lon.toFixed(4)}`)),
+      h("div", null, h("span", { className: "stat-label" }, "Alt: "), h("span", { className: "stat-value" }, `${drone.alt_m.toFixed(1)} m`)),
+      h("div", null, h("span", { className: "stat-label" }, "Speed: "), h("span", { className: "stat-value" }, drone.speed_mps != null ? drone.speed_mps.toFixed(1) + " m/s" : "—")),
+      h("div", null, h("span", { className: "stat-label" }, "Battery: "), h("span", { className: "stat-value" }, drone.battery_pct != null ? drone.battery_pct.toFixed(0) + "%" : "—")),
+      h("div", { style: { gridColumn: "1 / -1" } },
+        h("span", { className: "stat-label" }, "Launch point: "),
+        h("span", { className: "stat-value" }, drone.home_lat != null ? `${drone.home_lat.toFixed(4)}, ${drone.home_lon.toFixed(4)}` : "not yet known")
+      )
+    ),
+    h("div", { className: "battery-bar" },
+      h("div", {
+        className: `battery-fill ${batteryClass(drone.battery_status)}`,
+        style: { width: `${drone.battery_pct ?? 0}%` },
+      })
+    ),
+    isLowBattery ? h("div", { className: "alert-banner" }, `⚠ Battery ${drone.battery_status.toUpperCase()} — consider RTL`) : null,
+    h("div", { className: "cmd-row" },
+      h("button", {
+        className: "cmd-btn",
+        onClick: () => onCommand(drone.drone_id, "GOTO", { lat: drone.lat + 0.002, lon: drone.lon, alt_m: 60 }),
+      }, "Nudge waypoint"),
+      h("button", {
+        className: "cmd-btn rtl",
+        disabled: isReturning,
+        onClick: () => onCommand(drone.drone_id, "RTL", {}),
+      }, isReturning ? "Returning…" : "Return to Launch")
+    ),
+    lastResult ? h("div", { className: "last-cmd-result" }, `↳ ${lastResult.command}: ${lastResult.accepted ? "✓" : "✗"} ${lastResult.detail}`) : null
+  );
+}
+
+function App() {
+  const [drones, setDrones] = useState({});
+  const [connected, setConnected] = useState(false);
+  const [lastResults, setLastResults] = useState({});
+  const mapRef = useRef(null);
+  const markersRef = useRef({});
+  const wsRef = useRef(null);
+
+  // init map once
+  useEffect(() => {
+    const map = L.map("map").setView([12.955, 77.61], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map);
+    mapRef.current = map;
+    return () => map.remove();
+  }, []);
+
+  // SVG drone icon — simple quadcopter silhouette, color-coded by
+  // protocol, rotated to match current heading. Built inline (no
+  // external image file) so there's no broken-image risk and no extra
+  // network request.
+  function droneSvg(color, headingDeg) {
+    const rot = headingDeg != null ? headingDeg : 0;
+    return `
+      <div style="transform: rotate(${rot}deg); width:30px; height:30px; display:flex; align-items:center; justify-content:center;">
+        <svg width="26" height="26" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <!-- arms -->
+          <line x1="16" y1="16" x2="6" y2="6" stroke="${color}" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="16" y1="16" x2="26" y2="6" stroke="${color}" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="16" y1="16" x2="6" y2="26" stroke="${color}" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="16" y1="16" x2="26" y2="26" stroke="${color}" stroke-width="2.2" stroke-linecap="round"/>
+          <!-- rotors -->
+          <circle cx="6" cy="6" r="3.4" fill="white" stroke="${color}" stroke-width="2"/>
+          <circle cx="26" cy="6" r="3.4" fill="white" stroke="${color}" stroke-width="2"/>
+          <circle cx="6" cy="26" r="3.4" fill="white" stroke="${color}" stroke-width="2"/>
+          <circle cx="26" cy="26" r="3.4" fill="white" stroke="${color}" stroke-width="2"/>
+          <!-- body -->
+          <circle cx="16" cy="16" r="5" fill="${color}"/>
+          <!-- heading pointer -->
+          <polygon points="16,3 13,9 19,9" fill="${color}"/>
+        </svg>
+      </div>
+    `;
+  }
+
+  function homeSvg(color) {
+    return `
+      <svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="11" fill="white" stroke="${color}" stroke-width="2"/>
+        <path d="M12 5 L19 11 V19 H14 V14 H10 V19 H5 V11 Z" fill="${color}"/>
+      </svg>
+    `;
+  }
+
+  const homeMarkersRef = useRef({});
+  const homeLinesRef = useRef({});
+
+  const upsertMarker = useCallback((drone) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const color = drone.protocol === "mavlink" ? "#0F8A7C" : "#B0680F";
+
+    // --- drone marker itself ---
+    if (markersRef.current[drone.drone_id]) {
+      markersRef.current[drone.drone_id].setLatLng([drone.lat, drone.lon]);
+      markersRef.current[drone.drone_id].setIcon(
+        L.divIcon({ className: "", html: droneSvg(color, drone.heading_deg), iconSize: [30, 30], iconAnchor: [15, 15] })
+      );
+    } else {
+      const icon = L.divIcon({
+        className: "", html: droneSvg(color, drone.heading_deg), iconSize: [30, 30], iconAnchor: [15, 15],
+      });
+      const marker = L.marker([drone.lat, drone.lon], { icon }).addTo(map);
+      marker.bindTooltip(`${drone.drone_id} (${drone.protocol})`, { permanent: false });
+      markersRef.current[drone.drone_id] = marker;
+    }
+
+    // --- home/launch marker — drawn once, doesn't move once known ---
+    if (drone.home_lat != null && drone.home_lon != null && !homeMarkersRef.current[drone.drone_id]) {
+      const homeIcon = L.divIcon({
+        className: "", html: homeSvg(color), iconSize: [22, 22], iconAnchor: [11, 11],
+      });
+      const homeMarker = L.marker([drone.home_lat, drone.home_lon], { icon: homeIcon, zIndexOffset: -100 }).addTo(map);
+      homeMarker.bindTooltip(`${drone.drone_id} launch point`, { permanent: false });
+      homeMarkersRef.current[drone.drone_id] = homeMarker;
+    }
+
+    // --- dashed line connecting drone's current position to its home ---
+    if (drone.home_lat != null && drone.home_lon != null) {
+      const latlngs = [[drone.lat, drone.lon], [drone.home_lat, drone.home_lon]];
+      if (homeLinesRef.current[drone.drone_id]) {
+        homeLinesRef.current[drone.drone_id].setLatLngs(latlngs);
+      } else {
+        const line = L.polyline(latlngs, {
+          color, weight: 1.5, opacity: 0.45, dashArray: "4 6",
+        }).addTo(map);
+        homeLinesRef.current[drone.drone_id] = line;
+      }
+    }
+  }, []);
+
+  // websocket connection
+  useEffect(() => {
+    let retryTimer;
+    function connect() {
+      const ws = new WebSocket(BACKEND_WS);
+      wsRef.current = ws;
+      ws.onopen = () => setConnected(true);
+      ws.onclose = () => {
+        setConnected(false);
+        retryTimer = setTimeout(connect, 2000);
+      };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === "state_update") {
+          const d = msg.data;
+          setDrones((prev) => ({ ...prev, [d.drone_id]: d }));
+          upsertMarker(d);
+        }
+      };
+    }
+    connect();
+    return () => { clearTimeout(retryTimer); wsRef.current?.close(); };
+  }, [upsertMarker]);
+
+  const sendCommand = useCallback(async (droneId, command, params) => {
+    try {
+      const res = await fetch(`${BACKEND_HTTP}/api/drones/${droneId}/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command, params }),
+      });
+      const result = await res.json();
+      setLastResults((prev) => ({ ...prev, [droneId]: result }));
+    } catch (e) {
+      setLastResults((prev) => ({ ...prev, [droneId]: { command, accepted: false, detail: "request failed — is the backend running?" } }));
+    }
+  }, []);
+
+  const droneList = Object.values(drones).sort((a, b) => a.drone_id.localeCompare(b.drone_id));
+
+  return h(React.Fragment, null,
+    h("header", null,
+      h("div", null,
+        h("h1", null, "Integrated Drone Management System"),
+        h("div", { className: "sub" }, "Proof of concept — Challenge 16 · Multi-protocol fleet monitoring")
+      ),
+      h("span", { className: `conn-badge ${connected ? "conn-on" : "conn-off"}` }, connected ? "● LIVE" : "○ DISCONNECTED")
+    ),
+    h("div", { className: "main" },
+      h("div", { id: "map" }),
+      h("div", { className: "sidebar" },
+        droneList.length === 0
+          ? h("div", { className: "empty-state" },
+              "Waiting for drone telemetry...", h("br"), h("br"),
+              "Make sure the backend and both simulators are running (see README)."
+            )
+          : null,
+        ...droneList.map((d) => h(DroneCard, { key: d.drone_id, drone: d, onCommand: sendCommand, lastResult: lastResults[d.drone_id] }))
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+
+</body>
+</html>
