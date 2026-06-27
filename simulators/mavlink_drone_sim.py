@@ -28,7 +28,7 @@ START_LON = 77.5946
 START_ALT_M = 920.0
 
 CRUISE_ALT_M = 40.0       # height above HOME during normal flight
-WAYPOINT_SPEED_DEG_S = 0.00006  # tuned for a visible but not instant transit
+WAYPOINT_SPEED_DEG_S = 0.00015  # fast enough to complete a ~200m GOTO in ~7s
 ARRIVAL_THRESHOLD_DEG = 0.0003  # ~30m — "close enough" to call a waypoint reached
 
 
@@ -65,7 +65,7 @@ class FlightState:
         #        smoothly from where the drone actually is, no jump.
         self.circle_angle = 0.0
         self.CIRCLE_SPEED = 0.006   # radians per tick at 0.5s interval ≈ 0.15 rad/s
-        self.RADIUS_DEG = 0.01
+        self.RADIUS_DEG = 0.003     # ~330m radius — proportionate to GOTO distances
 
         self.battery_pct = 95
 
@@ -85,19 +85,34 @@ class FlightState:
             self.target_alt = self.home_alt + CRUISE_ALT_M
         print(f"[state] -> RETURNING_TO_LAUNCH (home: {self.home_lat:.5f}, {self.home_lon:.5f})")
 
-    def resume_circling(self):
-        """Resume CIRCLING from wherever the drone currently is.
-        Key: initialize circle_angle from the drone's current position
-        relative to home, so the next tick's position is a smooth
-        continuation rather than a jump to wherever elapsed*0.15 happens
-        to put us on the home circle.
+    def resume_circling(self, from_lat: float = None, from_lon: float = None):
+        """
+        Resume CIRCLING smoothly from a known position.
+
+        `from_lat`/`from_lon` should be the drone's actual position at
+        the moment of arrival — passed explicitly because self.lat/lon
+        may already have been updated by a previous call, making the
+        angle calculation unreliable.
+
+        The angle is derived from atan2 of (from_pos - home), then
+        self.lat/lon is immediately snapped to the exact circle point
+        at that angle so the next step_position() tick is continuous.
         """
         with self.lock:
-            dlat = self.lat - self.home_lat
-            dlon = self.lon - self.home_lon
-            # atan2 gives the angle of the drone's current position on the
-            # circle around home — starting the circle here means no jump.
-            self.circle_angle = math.atan2(dlat, dlon)
+            ref_lat = from_lat if from_lat is not None else self.lat
+            ref_lon = from_lon if from_lon is not None else self.lon
+            dlat = ref_lat - self.home_lat
+            dlon = ref_lon - self.home_lon
+            # If we're arriving right at home (RTL case), the offset is
+            # near-zero — use the last known angle to avoid atan2(0,0)=0
+            # snapping the drone to the east side of the circle.
+            if abs(dlat) < 1e-6 and abs(dlon) < 1e-6:
+                # keep self.circle_angle as-is (last approach angle)
+                pass
+            else:
+                self.circle_angle = math.atan2(dlat, dlon)
+            self.lat = self.home_lat + self.RADIUS_DEG * math.sin(self.circle_angle)
+            self.lon = self.home_lon + self.RADIUS_DEG * math.cos(self.circle_angle)
             self.mode = "CIRCLING"
             self.target_lat = None
             self.target_lon = None
@@ -164,10 +179,11 @@ def step_position(state: FlightState):
     dist = math.sqrt(dlat**2 + dlon**2)
 
     if dist <= ARRIVAL_THRESHOLD_DEG:
-        with state.lock:
-            state.lat, state.lon, state.alt_m = target_lat, target_lon, target_alt
-        state.resume_circling()
-        return target_lat, target_lon, target_alt, 0.0, 0.0
+        # Pass the final approach position explicitly so resume_circling()
+        # can compute a meaningful atan2 angle regardless of whether the
+        # target is home (RTL) or a waypoint far from home (GOTO).
+        state.resume_circling(from_lat=lat, from_lon=lon)
+        return state.lat, state.lon, state.alt_m, 0.0, 0.0
 
     step = min(WAYPOINT_SPEED_DEG_S, dist)
     new_lat = lat + (dlat / dist) * step

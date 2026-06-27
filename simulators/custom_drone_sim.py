@@ -33,7 +33,7 @@ START_ALT_FT = 3200.0  # ~975m, different cruise alt from Drone A on purpose
 
 FT_PER_M = 3.28084
 CRUISE_ALT_FT = 25.0  # height above HOME during normal flight
-WAYPOINT_SPEED_DEG_S = 0.00006
+WAYPOINT_SPEED_DEG_S = 0.00015  # fast enough to complete a ~200m GOTO in ~7s
 ARRIVAL_THRESHOLD_DEG = 0.0003
 
 
@@ -73,7 +73,7 @@ class FlightState:
         # can initialize from the drone's actual current position.
         self.circle_angle = 1.0       # offset from zero so it doesn't overlap with Drone A
         self.CIRCLE_SPEED = -0.005    # negative = clockwise, different direction from Drone A
-        self.RADIUS_DEG = 0.008
+        self.RADIUS_DEG = 0.003       # ~330m radius — proportionate to GOTO distances
 
         self.voltage = 16.8
 
@@ -93,11 +93,18 @@ class FlightState:
             self.target_alt_ft = self.home_alt_ft + CRUISE_ALT_FT
         print(f"[state] -> RETURNING_TO_LAUNCH (home: {self.home_lat:.5f}, {self.home_lon:.5f})")
 
-    def resume_circling(self):
+    def resume_circling(self, from_lat: float = None, from_lon: float = None):
         with self.lock:
-            dlat = self.lat - self.home_lat
-            dlon = self.lon - self.home_lon
-            self.circle_angle = math.atan2(dlat, dlon)
+            ref_lat = from_lat if from_lat is not None else self.lat
+            ref_lon = from_lon if from_lon is not None else self.lon
+            dlat = ref_lat - self.home_lat
+            dlon = ref_lon - self.home_lon
+            if abs(dlat) < 1e-6 and abs(dlon) < 1e-6:
+                pass  # keep last angle — RTL arrived right at home
+            else:
+                self.circle_angle = math.atan2(dlat, dlon)
+            self.lat = self.home_lat + self.RADIUS_DEG * math.sin(self.circle_angle)
+            self.lon = self.home_lon + self.RADIUS_DEG * math.cos(self.circle_angle)
             self.mode = "CIRCLING"
             self.target_lat = None
             self.target_lon = None
@@ -167,10 +174,8 @@ def step_position(state: FlightState):
     dist = math.sqrt(dlat**2 + dlon**2)
 
     if dist <= ARRIVAL_THRESHOLD_DEG:
-        with state.lock:
-            state.lat, state.lon, state.alt_ft = target_lat, target_lon, target_alt_ft
-        state.resume_circling()
-        return target_lat, target_lon, target_alt_ft, 0.0, 0.0
+        state.resume_circling(from_lat=lat, from_lon=lon)
+        return state.lat, state.lon, state.alt_ft, 0.0, 0.0
 
     step = min(WAYPOINT_SPEED_DEG_S, dist)
     new_lat = lat + (dlat / dist) * step
