@@ -55,7 +55,8 @@ Both simulators record a genuine home/launch position at startup and run an inte
 
 ## Project Structure
 
-folder/
+```text
+.
 ├── simulators/
 │   ├── mavlink_drone_sim.py      # Mobile UAS – MAVLink over UDP
 │   └── custom_drone_sim.py       # Tethered UAS – Fictional OEM JSON/TCP
@@ -71,10 +72,7 @@ folder/
 │   └── dashboard.html            # Tactical C2 React+Leaflet Dashboard
 ├── test_integration.py           # Unit normalization correctness tests
 └── test_command_loop.py          # Automated CLI testing for RTL/GOTO
-
-
----
-
+```
 ## Testing & Verification
 If you wish to run the automated Python tests without the UI, ensure you update the target callsigns in `test_command_loop.py` from the legacy `DRONE-A`/`DRONE-B` to the new `UAS-ALPHA-MOBILE`/`UAS-BRAVO-TETHERED` strings.
 
