@@ -53,23 +53,20 @@ async def broadcast_to_websockets(state: DroneState) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- This is the ONLY place that knows which drone speaks which protocol ---
     registry.on_broadcast(broadcast_to_websockets)
-
+    
     mavlink_drone = MavlinkAdapter(
-        drone_id="DRONE-A", on_state=None, udp_listen_port=14550, udp_command_port=14555
+        drone_id="UAS-ALPHA-MOBILE", on_state=None, udp_listen_port=14550, udp_command_port=14555, drone_type="Networked UAS"
     )
+    
     aerolink_drone = AeroLinkAdapter(
-        drone_id="DRONE-B", on_state=None, host="127.0.0.1", port=9100
+        drone_id="UAS-BRAVO-TETHERED", on_state=None, host="127.0.0.1", port=9100, drone_type="Tethered UAS"
     )
-
+    
     await registry.add_drone(mavlink_drone)
     await registry.add_drone(aerolink_drone)
-
     yield
-
     await registry.shutdown()
-
 
 app = FastAPI(title="Integrated Drone Management System — PoC", lifespan=lifespan)
 

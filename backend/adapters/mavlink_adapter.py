@@ -20,8 +20,8 @@ from .base import BatteryStatus, CommandResult, DroneAdapter, DroneState
 
 
 class MavlinkAdapter(DroneAdapter):
-    def __init__(self, drone_id: str, on_state, udp_listen_port: int, udp_command_port: int | None = None):
-        super().__init__(drone_id, on_state)
+    def __init__(self, drone_id: str, on_state, udp_listen_port: int, udp_command_port: int | None = None, drone_type: str = "Networked UAS"):
+        super().__init__(drone_id, on_state, drone_type=drone_type, encryption_status="AES-256 Secured")
         self.udp_listen_port = udp_listen_port
         # Commands go out on a SEPARATE connection from the one we
         # receive telemetry on. udpin (telemetry) is a receive-only
@@ -68,6 +68,8 @@ class MavlinkAdapter(DroneAdapter):
                 state = DroneState(
                     drone_id=self.drone_id,
                     protocol="mavlink",
+                    drone_type=self.drone_type,
+                    encryption_status=self.encryption_status,   
                     lat=msg.lat / 1e7,
                     lon=msg.lon / 1e7,
                     alt_m=msg.alt / 1000.0,

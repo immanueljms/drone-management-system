@@ -28,24 +28,24 @@ class BatteryStatus(str, Enum):
 class DroneState(BaseModel):
     """
     The unified, protocol-agnostic snapshot of one drone at one moment.
-    Every adapter's job is to produce this from whatever wire format
-    its drone actually speaks.
     """
     drone_id: str
-    protocol: str  # e.g. "mavlink", "aerolink" — for display/debugging only
+    protocol: str  
+    drone_type: str = "Untethered" # "Tethered" or "Untethered (Networked)"
+    encryption_status: str = "AES-256 Secured" # Simulating the secure mesh requirement
     lat: float
     lon: float
-    alt_m: float  # always normalized to meters, regardless of source units
-    speed_mps: Optional[float] = None  # normalized to m/s
+    alt_m: float  
+    speed_mps: Optional[float] = None  
     heading_deg: Optional[float] = None
-    battery_pct: Optional[float] = None  # normalized to 0-100 where possible
+    battery_pct: Optional[float] = None  
     battery_status: BatteryStatus = BatteryStatus.UNKNOWN
     link_quality_pct: Optional[float] = None
-    flight_mode: str = "UNKNOWN"  # CIRCLING | GOTO_WAYPOINT | RETURNING_TO_LAUNCH
+    flight_mode: str = "UNKNOWN"  
     home_lat: Optional[float] = None
     home_lon: Optional[float] = None
     last_update_unix: float = Field(default_factory=lambda: time.time())
-    raw: dict = Field(default_factory=dict)  # original payload, kept for debugging/audit
+    raw: dict = Field(default_factory=dict)
 
 
 class CommandResult(BaseModel):
@@ -60,41 +60,9 @@ StateCallback = Callable[[DroneState], Awaitable[None]]
 
 
 class DroneAdapter(ABC):
-    """
-    One adapter instance manages the connection to ONE drone over its
-    native protocol. The registry/backend only ever calls these four
-    methods — it never touches MAVLink, AeroLink, or any future protocol
-    directly.
-    """
-
-    def __init__(self, drone_id: str, on_state: StateCallback):
+    def __init__(self, drone_id: str, on_state: StateCallback, drone_type: str = "Networked UAS", encryption_status: str = "AES-256"):
         self.drone_id = drone_id
         self.on_state = on_state
+        self.drone_type = drone_type
+        self.encryption_status = encryption_status
         self._running = False
-
-    @abstractmethod
-    async def connect(self) -> None:
-        """Establish the connection to the drone (open socket, etc.)."""
-        ...
-
-    @abstractmethod
-    async def listen(self) -> None:
-        """
-        Run the receive loop. Must call `await self.on_state(state)`
-        each time a new DroneState is parsed. Should run until
-        `disconnect()` is called.
-        """
-        ...
-
-    @abstractmethod
-    async def send_command(self, command: str, params: dict) -> CommandResult:
-        """
-        Translate a generic command (e.g. command="RTL") into this
-        protocol's native wire format and send it.
-        """
-        ...
-
-    @abstractmethod
-    async def disconnect(self) -> None:
-        """Tear down the connection cleanly."""
-        ...

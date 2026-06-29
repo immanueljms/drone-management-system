@@ -45,8 +45,8 @@ def _map_battery_status(aerolink_status: str) -> BatteryStatus:
 
 
 class AeroLinkAdapter(DroneAdapter):
-    def __init__(self, drone_id: str, on_state, host: str, port: int):
-        super().__init__(drone_id, on_state)
+    def __init__(self, drone_id: str, on_state, host: str, port: int, drone_type: str = "Tethered UAS"):
+        super().__init__(drone_id, on_state, drone_type=drone_type, encryption_status="AES-256 Secured")
         self.host = host
         self.port = port
         self._reader: asyncio.StreamReader | None = None
@@ -90,6 +90,8 @@ class AeroLinkAdapter(DroneAdapter):
             state = DroneState(
                 drone_id=self.drone_id,
                 protocol="aerolink",
+                drone_type=self.drone_type,
+                encryption_status=self.encryption_status,
                 lat=pos["lat_deg"],
                 lon=pos["lon_deg"],
                 alt_m=round(pos["alt_ft"] * FT_TO_M, 1),
